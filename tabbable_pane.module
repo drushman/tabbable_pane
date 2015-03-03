@@ -1,0 +1,205 @@
+<?php
+
+define('TABBABLE_PANE_HORIZONTAL', 1);
+define('TABBABLE_PANE_VERTICAL', 2);
+
+/**
+ * Implements hook_entity_info().
+ */
+function tabbable_pane_entity_info() {
+  $info['tabbable_pane'] = array(
+    'label' => t('Tabbable pane'),
+    'controller class' => 'EntityAPIController',
+    'entity class' => 'Entity',
+    'base table' => 'tabbable_pane',
+    'module' => 'tabbable_pane',
+    'fieldable' => TRUE,
+    'entity keys' => array(
+      'id' => 'id',
+      'label' => 'id',
+    ),
+    'view modes' => array(
+      'full' => array(
+        'label'  => t('Full'),
+        'custom settings' => FALSE,
+      ),
+    ),
+    'static cache' => TRUE,
+    'bundles' => array(
+      'tabbable_pane' => array(
+        'label' => t('Tabbable pane'),
+      ),
+    ),
+  );
+
+  return $info;
+}
+
+/**
+ * The entity tabbable form 
+ */
+function tabbable_pane_form($form, &$form_state, $entity, $op = 'edit') {
+  $form_state['entity'] = $entity;
+  $form['admin_title'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Administrative title'),
+    '#default_value' => $entity->admin_title,
+    '#weight' => -10,
+  );
+  $form['type'] = array(
+    '#type' => 'radios',
+    '#title' => t('Tab type'),
+    '#default_value' => isset($entity->type) ? $entity->type : TABBABLE_PANE_HORIZONTAL,
+    '#options' => array(
+      TABBABLE_PANE_HORIZONTAL => t('Horizontal'), 
+      TABBABLE_PANE_VERTICAL => t('Vertical')
+    ),
+  );
+  
+  // Make the other form items dependent upon it.
+  ctools_include('dependent');
+  ctools_add_js('dependent');
+  $form['reusable'] = array(
+    '#weight' => 10,
+  );
+  $form['reusable']['reusable'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Make this entity reusable'),
+    '#default_value' => $entity->reusable,
+    '#id' => 'edit-reusable',
+  );
+
+  $form['reusable']['category'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Category'),
+    '#description' => t('The category this content will appear in the "Add content" modal. If left blank the category will be "Miscellaneous".'),
+    '#dependency' => array('edit-reusable' => array(1)),
+    '#default_value' => $entity->category,
+  );
+
+  field_attach_form('tabbable_pane', $entity, $form, $form_state);
+  return $form;
+}
+
+
+/**
+ * Basic edit form for the tabbable entity.
+ *
+ * The entity being edited should be stored in $form_state['entity']
+ * when this form is built.
+ */
+function tabbable_pane_form_validate($form, &$form_state) {
+  $entity = $form_state['entity'];
+  // Notify field widgets to validate their data.
+  field_attach_form_validate('tabbable_pane', $entity, $form, $form_state);
+}
+
+/**
+ * The entity form submit.
+ * @see tabbable_pane_form
+ */
+function tabbable_pane_form_submit($form, &$form_state) {
+  $entity = $form_state['entity'];
+  entity_form_submit_build_entity('tabbable_pane', $entity, $form, $form_state);
+  tabbable_pane_save($entity);
+  return $entity;
+}
+
+/**
+ * Implements hook_ctools_plugin_directory()
+ */
+function tabbable_pane_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'ctools' && $plugin_type == 'content_types') {
+    return 'plugins/' . $plugin_type;
+  }
+}
+
+/**
+ * View a tabbable pane.
+ *
+ * @see node_view()
+ */
+function tabbable_pane_view($entity, $view_mode) {
+  $tabs = array();
+  // Get tabs from entity
+  $wrapper = entity_metadata_wrapper('tabbable_pane', $entity);
+  $index = 1;
+  foreach ($wrapper->field_tabbable_pane_tabs->getIterator() as $tab_wrapper) {
+    $tab = new stdClass();
+    $tab->title = $tab_wrapper->field_tabbable_pane_tab_title->value();
+    $content = $tab_wrapper->field_tabbable_pane_tab_content->value();
+    $tab->content = check_markup($content['value'], $content['format']);
+    $tab->index = $index;
+    $tabs[] = $tab;
+    
+    ++$index;
+  }
+  // Render tabs with tabbable_pane_tabs theme
+  return theme('tabbable_pane_tabs', array('tabs' => $tabs, 'entity' => $entity));
+}
+
+
+
+/**
+ * Implements hook_theme()
+ */
+function tabbable_pane_theme($existing, $type, $theme, $path) {
+  return array(
+    'tabbable_pane_tabs' => array(
+      'template' => 'tabbable-pane-tabs',
+      'variables' => array('tabs' => NULL, 'entity' => NULL),
+    ),
+  );
+}
+
+/**
+ * Callback to create a new entity.
+ */
+function tabbable_pane_create($values = array()) {
+  global $user;
+  $default = array(
+    'uid' => $user->uid,
+  );
+  return entity_create('tabbable_pane', array_merge_recursive($default, $values));
+}
+
+/**
+ * Save a tabbable pane.
+ * 
+ * @param Entity object $tabbable_pane
+ */
+function tabbable_pane_save($tabbable_pane) {
+  if (!$tabbable_pane->created) {
+    $tabbable_pane->created = REQUEST_TIME;
+  }
+  $tabbable_pane->changed = REQUEST_TIME;
+  entity_save('tabbable_pane', $tabbable_pane);
+}
+
+/**
+ * Delete a tabbable pane.
+ * 
+ * @param Entity object $tabbable_pane
+ */
+function tabbable_pane_delete($tabbable_pane) {
+  entity_delete('tabbable_pane', $tabbable_pane->id);
+}
+
+/**
+ * Tabbable pane entity loader.
+ *
+ * @see entity_load().
+ */
+function tabbable_pane_load($id, $reset = FALSE) {
+  $tabbable_panes = tabbable_pane_load_multiple(array($id), array(), $reset);
+  return reset($tabbable_panes);
+}
+
+/**
+ * Load multiple fieldable panel panes.
+ *
+ * @see entity_load_multiple().
+ */
+function tabbable_pane_load_multiple($ids = array(), $conditions = array(), $reset = FALSE) {
+  return entity_load('tabbable_pane', $ids, $conditions, $reset);
+}
