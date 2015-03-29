@@ -2,3 +2,4 @@ name = Tabbable Pane
 description = Provide a pane tabbable for panels
 core = 7.x
 package = Aduro
+dependencies[] = field_collection
